@@ -22,18 +22,20 @@
                 display: block;
             }
             #sessions {
-                list-style: none;
+                list-style: decimal inside;
                 margin: 0;
                 padding: 0;
             }
             #sessions > li {
-                background: #eee;
+                background: #dfd;
                 border-bottom: 1px solid #ccc;
                 cursor: pointer;
                 padding: 1em;
+                margin: 10px;
+                border-radius: 5px;
             }
             #sessions > li:hover {
-                background: #ddd;
+                background: #ada;
             }
             p {
                 padding: 0 1em;
@@ -61,7 +63,7 @@
                 font-family: 'Courier New', monospace;
                 font-weight: 700;
                 font-size: 1.1rem;
-                color: #EF493E;
+                color: #D65;
                 display: flex;
                 min-height: 300px;
                 margin: auto;
@@ -76,8 +78,8 @@
             /* Host New Game Button */
             #host-new {
                 color: #fff;
-                background-color: #EF493E;
-                border-color: #EF493E;
+                background-color: #D65;
+                border-color: #D65;
                 display: block;
                 margin: 1em auto;
                 font-family: sans-serif;
@@ -448,22 +450,33 @@ class LobbyView extends Multisynq.View {
 
     showSessions() {
         if (appSessionName) return;
-        // sessions
-        let sessions = Array.from(this.model.sessions.values());
+        // list ongoing sessions
+        const sessions = Array.from(this.model.sessions.values());
         sessions.sort((a, b) => b.since - a.since);
-        let list = document.getElementById("sessions");
-        list.innerHTML = "";
-        for (let session of sessions) {
-            let item = document.createElement("li");
-            item.textContent = session.name;
-            item.textContent += `: ${session.users || "starting ..."}`;
-            // item.textContent += ` [${Math.ceil((Date.now() - session.since) / 1000)}s,`;
-            // item.textContent += ` timeout in ${(SESSION_TIMEOUT - Math.ceil((this.extrapolatedNow() - session.lastActive) / 1000))}s]`;
-            item.addEventListener("click", () => this.sessionClicked(session.name));
-            list.appendChild(item);
+        const list = document.getElementById("sessions");
+        const items = [...list.querySelectorAll("li")];
+        for (const session of sessions) {
+            // reuse existing list item, or create a new one
+            const index = items.findIndex(i => i.getAttribute("data-session") === session.name);
+            let item = index >= 0 ? items.splice(index, 1)[0] : null;
+            if (!item) {
+                item = document.createElement("li");
+                item.setAttribute("data-session", session.name);
+                item.addEventListener("click", () => this.sessionClicked(session.name));
+                list.appendChild(item);
+            }
+            // update the list item
+            const users = session.users; // string or { count, description, color }
+            const description = users.description || users;
+            item.innerHTML = `<b>${session.name}</b>: ${description || "starting ..."}`;
+            item.className = users.color;
+        }
+        // remove any remaining items
+        for (const item of items) {
+            list.removeChild(item);
         }
         document.getElementById("no-games").classList.toggle("hidden", sessions.length > 0);
-        // lobby users
+        // list players in lobby
         const locations = new Map();
         let count = 0;
         let unknown = false;
@@ -482,7 +495,7 @@ class LobbyView extends Multisynq.View {
                 unknown = true;
             }
         }
-        let users = "<b>In Lobby</b>: You";
+        let users = "<b>Players in Lobby</b>: You";
         if (count) {
             users += ` and ${count} user${count === 1 ? "" : "s"}`;
             if (locations.size > 0) {
