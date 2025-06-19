@@ -22,7 +22,7 @@
                 display: block;
             }
             #sessions {
-                list-style: decimal inside;
+                list-style: none;
                 margin: 0;
                 padding: 0;
             }
@@ -55,7 +55,7 @@
     </head>
     <body class="in-lobby">
         <div id="lobby">
-            <h1>Multisynq Lobby</h1>
+            <h1>Multiblaster</h1>
             <ul id="sessions"></ul>
             <p id="users"></p>
         </div>
@@ -69,15 +69,11 @@
 // [ ] hierarchical lobby sessions
 // [ ] unlisted sessions (join directly by name)
 
+// preserve original title (without " - session name")
+const APPNAME = document.title.split(" - ")[0];
+
 const BaseUrl = window.location.href.replace(/[^/?#]+([?#].*)?$/, "");
 Multisynq.Constants.AppUrl = BaseUrl + "game.html";
-
-let appname = BaseUrl.match(/([^/]+)\/?$/, "$1");
-if (appname) {
-    appname = appname[1].replace(/^./, c => c.toUpperCase());
-    document.querySelector("h1").textContent = appname;
-    document.title = appname + " Lobby";
-}
 
 let appSessionName = window.location.hash.slice(1);
 try { appSessionName = decodeURIComponent(appSessionName); } catch (e) { }
@@ -219,17 +215,12 @@ class LobbyView extends Multisynq.View {
         sessions.sort((a, b) => b.since - a.since);
         let list = document.getElementById("sessions");
         list.innerHTML = "";
-        sessions.push({ name: "New Session" });
         for (let session of sessions) {
             let item = document.createElement("li");
             item.textContent = session.name;
-            if (session.name === "New Session") {
-                item.style.fontStyle = "italic";
-            } else {
-                item.textContent += `: ${session.users || "starting ..."}`;
-                // item.textContent += ` [${Math.ceil((Date.now() - session.since) / 1000)}s,`;
-                // item.textContent += ` timeout in ${(SESSION_TIMEOUT - Math.ceil((this.extrapolatedNow() - session.lastActive) / 1000))}s]`;
-            }
+            item.textContent += `: ${session.users || "starting ..."}`;
+            // item.textContent += ` [${Math.ceil((Date.now() - session.since) / 1000)}s,`;
+            // item.textContent += ` timeout in ${(SESSION_TIMEOUT - Math.ceil((this.extrapolatedNow() - session.lastActive) / 1000))}s]`;
             item.addEventListener("click", () => this.sessionClicked(session.name));
             list.appendChild(item);
         }
@@ -269,8 +260,7 @@ class LobbyView extends Multisynq.View {
     }
 
     sessionClicked(name) {
-        name = enterApp(name);
-        if (!name) return;
+        enterApp(name);
         clearInterval(this.interval);
         // possibly leave lobby session
         let session = this.model.sessions.get(name);
@@ -306,7 +296,7 @@ function enterApp(name) {
     // update session URL and QR code and title
     window.location.hash = "#" + encodeURIComponent(name);
     Multisynq.App.sessionURL = window.location.href;
-    document.title = appname ? `${appname} - ${name}` : name;
+    document.title = APPNAME ? `${APPNAME} - ${name}` : name;
     return name;
 }
 
@@ -320,7 +310,7 @@ function exitApp() {
     // update session URL and QR code and title
     window.location.hash = "";
     Multisynq.App.sessionURL = window.location.href;
-    document.title = appname;
+    document.title = APPNAME;
 }
 
 function enterLobbyOnMessage(e) {

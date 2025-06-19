@@ -41,7 +41,7 @@
                 background-color: #FFF;
             }
             #initials {
-                position: fixed; bottom: 10px; right: 70px; padding: .5em; border-radius: 30px;
+                position: fixed; bottom: 10px; right: 10px; padding: .5em; border-radius: 30px;
                 opacity: 50%; background: lightgray; box-shadow: 1px 1px 5px black;
                 border: none; color: #000; text-align: center; font-size: 1.2em;
 
@@ -57,8 +57,6 @@
         <canvas id="canvas" width="1000" height="1000"></canvas>
         <div id="joystick"><div id="knob"></div></div>
         <input id="initials" type="text" maxlength="10" size="10" placeholder="Initials">
-        <a id="codelink" href="https://github.com/croquet/multiblaster/blob/main/index.html"
-            title="View source code on GitHub" target="_blank">{}</a>
         <script>
 /////////// Model code is executed inside of synced VM ///////////
 
@@ -758,8 +756,10 @@ url.pathname = url.pathname.replace(/[^/]*$/, "lobby.html");
 // redirect to lobby if not in iframe or session
 if (!inIframe || !sessionName) window.location.href = url.href;
 
-Multisynq.App.sessionURL = url.href;
-Multisynq.App.makeWidgetDock(); // shows QR code
+// separate sessions by URL
+Multisynq.Constants.LobbyUrl = url.href;
+
+// we don't show QR code here because the lobby shows it
 
 Multisynq.Session.join({
     apiKey: '234567_Paste_Your_Own_API_Key_Here_7654321', // get your own from multisynq.io/coder
