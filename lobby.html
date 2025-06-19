@@ -50,14 +50,218 @@
             .in-lobby > #app {
                 display: none;
             }
+
+            p#users{
+                text-align: center;
+                margin-top: 0px;
+                color: rgb(78, 78, 78);
+            }
+
+            #no-games{
+                font-family: 'Courier New', monospace;
+                font-weight: 700;
+                font-size: 1.1rem;
+                color: #EF493E;
+                display: flex;
+                min-height: 300px;
+                margin: auto;
+                border-radius: 10px;
+                align-items: center;
+                justify-content: center;
+            }
+            #no-games.hidden {
+                display: none;
+            }
+
+            /* Host New Game Button */
+            #host-new {
+                color: #fff;
+                background-color: #EF493E;
+                border-color: #EF493E;
+                display: block;
+                margin: 1em auto;
+                font-family: sans-serif;
+                font-weight: 700;
+                font-size: 1.1rem;
+                line-height: 1.5;
+                text-align: center;
+                white-space: nowrap;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+                border: 1px solid transparent;
+                padding: 0.375rem 0.75rem;
+                border-radius: 0.25rem;
+                cursor: pointer;
+            }
+
+            #host-new:active {
+                background-color: #9c1b12;
+            }
+
+            /* Dialog Styles */
+            #host-dialog {
+                border-radius: 15px;
+                pointer-events: auto;
+                background-color: #fff;
+                background-clip: padding-box;
+                border: 1px solid rgba(0,0,0,.2);
+                border-radius: 0.3rem;
+                outline: 0;
+                -webkit-box-orient: vertical;
+                -webkit-box-direction: normal;
+                -ms-flex-direction: column;
+                flex-direction: column;
+            }
+
+            #host-contents {
+                padding: 40px;
+            }
+
+            .modal-header {
+                display: -webkit-box;
+                display: -ms-flexbox;
+                display: flex;
+                -webkit-box-align: start;
+                -ms-flex-align: start;
+                align-items: flex-start;
+                -webkit-box-pack: justify;
+                -ms-flex-pack: justify;
+                justify-content: space-between;
+                padding: 1rem;
+                border-bottom: 1px solid #e9ecef;
+                border-top-left-radius: 0.3rem;
+                border-top-right-radius: 0.3rem;
+            }
+
+            dialog::backdrop {
+                background-color: rgba(0,0,0,0.4);
+            }
+
+            .host-new-title {
+                text-align: center;
+                font-size: 2rem;
+            }
+
+            .modal-footer {
+                display: -webkit-box;
+                display: -ms-flexbox;
+                display: flex;
+                -webkit-box-align: center;
+                -ms-flex-align: center;
+                align-items: center;
+                -webkit-box-pack: end;
+                -ms-flex-pack: end;
+                justify-content: flex-end;
+                padding: 1rem;
+                border-top: 1px solid #e9ecef;
+            }
+
+            .close:not(:disabled):not(.disabled) {
+                cursor: pointer;
+            }
+            .modal-header .close {
+                padding: 1rem;
+                margin: -1rem -1rem -1rem auto;
+            }
+            button.close {
+                padding: 0;
+                background-color: transparent;
+                border: 0;
+                -webkit-appearance: none;
+            }
+
+            .close {
+                float: right;
+                font-size: 1.5rem;
+                font-weight: 700;
+                line-height: 1;
+                color: #000;
+                text-shadow: 0 1px 0 #fff;
+                opacity: .5;
+            }
+
+            .modal-title {
+                margin: 0;
+                line-height: 1.5;
+            }
+            .h5, h5 {
+                font-size: 1.25rem;
+            }
+
+            .modal-footer>:not(:last-child) {
+                margin-right: 0.25rem;
+            }
+
+            .btn-secondary {
+                color: #fff;
+                background-color: #6c757d;
+                border-color: #6c757d;
+            }
+            .btn {
+                display: inline-block;
+                font-weight: 400;
+                text-align: center;
+                white-space: nowrap;
+                vertical-align: middle;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+                border: 1px solid transparent;
+                padding: 0.375rem 0.75rem;
+                font-size: 1rem;
+                line-height: 1.5;
+                border-radius: 0.25rem;
+                transition: color .15s ease-in-out,background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+            }
+
+            .btn-primary {
+                color: #fff;
+                background-color: #28a745;
+                border-color: #28a745;
+            }
+
+            input {
+                width: 150px;
+                border-radius: 5px;
+                height: 36px;
+                margin-left: 10px;
+                font-size: 20px;
+            }
+
+            #game-name {
+                font-size: 20px;
+            }
         </style>
         <script src="https://cdn.jsdelivr.net/npm/@multisynq/client@1.0.4"></script>
     </head>
     <body class="in-lobby">
         <div id="lobby">
             <h1>Multiblaster</h1>
-            <ul id="sessions"></ul>
+            <button id="host-new">Host New Game</button>
             <p id="users"></p>
+            <dialog id="host-dialog">
+                <form>
+                    <div class="modal-header">
+                        <h5 class="modal-title">Host New Game</h5>
+                        <button type="button" class="close" aria-label="Close">
+                            <span aria-hidden="true" class="host-dialog-cancel">×</span>
+                        </button>
+                    </div>
+                    <div id="host-contents">
+                        <label for="host-dialog-name" id="game-name">Game name:</label>
+                        <input type="text" id="host-dialog-name" name="game-name" placeholder="My Game" required>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" value="cancel" class="btn btn-secondary host-dialog-cancel">Cancel</button>
+                        <button type="submit" value="default" id="host-dialog-submit" class="btn btn-primary">Enter Game</button>
+                    </div>
+                </form>
+            </dialog>
+            <p id="no-games">No games found</p>
+            <ul id="sessions"></ul>
         </div>
         <iframe id="app" src="about:blank"></iframe>
         <script>
@@ -187,6 +391,40 @@ class LobbyView extends Multisynq.View {
         this.subscribe(this.sessionId, "session-changed", this.showSessions);
         this.interval = setInterval(() => this.showSessions(), 1000);
         this.showSessions();
+
+        // Bind the "Host New Game" button
+        const newGameButton = document.getElementById('host-new');
+        newGameButton.addEventListener("click", () => {
+            const dialog = document.getElementById('host-dialog');
+            const nameInput = document.getElementById('host-dialog-name');
+            const okButton = document.getElementById('host-dialog-submit');
+            const cancelButtons = document.querySelectorAll('.host-dialog-cancel');
+            okButton.onclick = e => {
+                e.preventDefault();
+                const name = nameInput.value.trim();
+                if (name) dialog.close(name);
+            };
+
+            for (const cancelButton of cancelButtons) {
+                cancelButton.onclick = e => {
+                    // in Chrome, pressing return in the name field triggers a click on the first cancel button?!
+                    if (!e.clientX) okButton.onclick(e);
+                    else dialog.close("");
+                };
+            }
+
+            dialog.onclose = e => {
+                const name = dialog.returnValue;
+                if (name) {
+                    document.activeElement.blur(); // hide the keyboard
+                    this.sessionClicked(name);
+                }
+            };
+
+            dialog.showModal();
+            nameInput.focus();
+        });
+
         window.onmessage = e => {
             if (e.data && e.data.type === "multisynq-lobby") {
                 const { name, users } = e.data;
@@ -224,6 +462,7 @@ class LobbyView extends Multisynq.View {
             item.addEventListener("click", () => this.sessionClicked(session.name));
             list.appendChild(item);
         }
+        document.getElementById("no-games").classList.toggle("hidden", sessions.length > 0);
         // lobby users
         const locations = new Map();
         let count = 0;
@@ -243,7 +482,7 @@ class LobbyView extends Multisynq.View {
                 unknown = true;
             }
         }
-        let users = "Waiting: You";
+        let users = "<b>In Lobby</b>: You";
         if (count) {
             users += ` and ${count} user${count === 1 ? "" : "s"}`;
             if (locations.size > 0) {
@@ -256,7 +495,7 @@ class LobbyView extends Multisynq.View {
                 if (unknown) users += " and elsewhere";
             }
         }
-        document.getElementById("users").innerHTML = users + '<br><br><em>Click a session to join.</em>';
+        document.getElementById("users").innerHTML = users;
     }
 
     sessionClicked(name) {
