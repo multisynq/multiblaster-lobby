@@ -63,7 +63,7 @@
 class Game extends Multisynq.Model {
     init(_, persisted) {
         this.highscores = persisted?.highscores ?? {};
-        LobbyRelay.create();
+        LobbyRelayModel.create();
         this.ships = new Map();
         this.asteroids = new Set();
         this.blasts = new Set();
@@ -325,11 +325,15 @@ class Blast extends SpaceObject {
 }
 Blast.register("Blast");
 
-class Elected extends Multisynq.Model {
+// This model is used to elect a relay view for the lobby session
+// Its view is a LobbyRelayView, which reports to the lobby session in the parent window
+// This is so only one device in a game session reports to the lobby session
+class LobbyRelayModel extends Multisynq.Model {
     init() {
         super.init();
+        this.beWellKnownAs("lobbyRelay");
         this.views = new Map();
-        this.electedViewId = "";
+        this.relayViewId = "";
         this.subscribe(this.sessionId, "view-join", this.viewJoined);
         this.subscribe(this.sessionId, "view-exit", this.viewExited);
     }
@@ -345,52 +349,15 @@ class Elected extends Multisynq.Model {
     }
 
     viewsChanged() {
-        if (!this.views.has(this.electedViewId)) {
-            this.electedViewId = this.views.keys().next().value;
-            this.viewElected(this.electedViewId);
+        if (!this.views.has(this.relayViewId)) {
+            this.relayViewId = this.views.keys().next().value;
+            console.log("LobbyRelayModel", this.now(), "relay now", this.relayViewId);
+            this.publish(this.id, "relay-changed", this.relayViewId);
         }
     }
 
-    viewElected(viewId) {
-        console.log(this.now(), "elected", this.electedViewId);
-        this.publish(this.sessionId, "elected-view", viewId);
-    }
 }
-Elected.register("Elected");
-
-class LobbyRelay extends Elected {
-    init() {
-        super.init();
-        this.beWellKnownAs("lobbyRelay");
-        this.changeId = 0;
-        this.toRelay = null;
-        this.subscribe(this.id, "relay-done", this.relayDone);
-    }
-
-    viewsChanged() {
-        super.viewsChanged();
-        if (this.views.size === 0) {
-            this.toRelay = null;
-        } else {
-            this.toRelay = { changeId: ++this.changeId, views: [...this.views.keys()] };
-            this.publish(this.id, "relay-views");
-        }
-        // console.log(this.now(), "to relay", this.toRelay);
-    }
-
-    viewElected(viewId) {
-        this.publish(this.id, "relay-changed", viewId);
-    }
-
-    relayDone(changeId) {
-        console.log(this.now(), "relay done", changeId);
-        if (this.toRelay && this.toRelay.changeId === changeId) {
-            this.toRelay = null;
-            // console.log(this.now(), "to relay", this.toRelay);
-        }
-    }
-}
-LobbyRelay.register("LobbyRelay");
+LobbyRelayModel.register("LobbyRelayModel");
 
 /////////// Code below is executed outside of synced VM ///////////
 
@@ -692,11 +659,11 @@ class LobbyRelayView extends Multisynq.View {
         this.model = model;
         window.addEventListener("message", this);
         this.subscribe(model.id, "relay-changed", this.relayChanged);
-        this.relayChanged(this.model.electedViewId);
+        this.relayChanged(this.model.relayViewId);
     }
 
     relayChanged(viewId) {
-        console.log(`game relay ${this.viewId}: relay now ${viewId} ${this.viewId === viewId ? "(me)" : "(not me)"}`);
+        console.log(`LobbyRelayView ${this.viewId}: relay now ${viewId} ${this.viewId === viewId ? "(me)" : "(not me)"}`);
         clearInterval(this.lobbyInterval);
         if (viewId === this.viewId) {
             this.reportToLobby();
@@ -708,7 +675,7 @@ class LobbyRelayView extends Multisynq.View {
         clearInterval(this.lobbyInterval);
         window.removeEventListener("message", this);
         super.detach();
-        console.log(`game relay ${this.viewId}: detached`);
+        console.log(`LobbyRelayView ${this.viewId}: detached`);
     }
 
     reportToLobby() {
@@ -736,12 +703,7 @@ class LobbyRelayView extends Multisynq.View {
         }
 
         window.parent.postMessage({type: "multisynq-lobby", name: this.session.name, users}, "*");
-        // console.log("game relay", this.viewId, "sending multisynq-lobby", this.session.name, users);
-    }
-
-    handleEvent(event) {
-        if (event.type !== "message") return;
-        console.log("game relay", this.viewId, "got", event.data);
+        // console.log(`LobbyRelayView ${this.viewId}: sending multisynq-lobby`, this.session.name, users);
     }
 }
 

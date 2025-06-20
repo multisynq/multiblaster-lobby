@@ -172,6 +172,8 @@
                 background-color: transparent;
                 border: 0;
                 -webkit-appearance: none;
+                -moz-appearance: none;
+                appearance: none;
             }
 
             .close {
@@ -284,9 +286,9 @@ Multisynq.Constants.AppUrl = BaseUrl + "game.html";
 let appSessionName = window.location.hash.slice(1);
 try { appSessionName = decodeURIComponent(appSessionName); } catch (e) { }
 
-const SESSION_TIMEOUT = 5; // seconds
+const SESSION_TIMEOUT = 5; // expire after 5 seconds (game pings lobby every 2 seconds)
 
-class Lobby extends Multisynq.Model {
+class LobbyModel extends Multisynq.Model {
 
     init() {
         this.sessions = new Map();
@@ -299,6 +301,7 @@ class Lobby extends Multisynq.Model {
     ensureSession(name, since) {
         let session = this.sessions.get(name);
         if (!session) {
+            console.log("LobbyModel", this.now(), `creating session '${name}'`);
             session = {
                 name,
                 users: "",
@@ -309,6 +312,7 @@ class Lobby extends Multisynq.Model {
                 timeout: null,
             };
             this.sessions.set(name, session);
+            console.log("LobbyModel", this.now(), "sessions:", this.sessions);
         }
         return session;
     }
@@ -329,7 +333,7 @@ class Lobby extends Multisynq.Model {
             location: this.printLocation(location),
             session: null,
         });
-        console.log("lobby", this.now(), "view joined", viewId,
+        console.log("LobbyModel", this.now(), "view joined", viewId, "views:",
             [...this.views.values()].map(v => `${v.viewId} ${v.session ? v.session.name : "in lobby"}`));
     }
 
@@ -352,7 +356,7 @@ class Lobby extends Multisynq.Model {
             }
             // if there were more than one user, the session will expire on its own
         }
-        console.log("lobby", this.now(), "view exited", viewId,
+        console.log("LobbyModel", this.now(), "view exited", viewId, "views:",
             [...this.views.values()].map(v => `${v.viewId} ${v.session ? v.session.name : "in lobby"}`));
     }
 
@@ -360,10 +364,10 @@ class Lobby extends Multisynq.Model {
     inAppSession({ viewId, name, now, users }) {
         let view = this.views.get(viewId);
         if (view.session && view.session.name !== name) {
-            console.warn("lobby", this.now(), "view changed session", viewId, view.session.name, name);
+            console.warn("LobbyModel", this.now(), "view changed session", viewId, view.session.name, name);
             view.session.views.delete(view);
         }
-        let session = this.ensureSession(name, now);
+        let session = this.ensureSession(name, now); // now is current Date.now() sent by the view
         session.lastActive = this.now();
         session.users = users;
         if (!session.views.has(view)) {
@@ -374,12 +378,12 @@ class Lobby extends Multisynq.Model {
         if (session.relay !== view) {
             session.relay = view;
             this.publish(this.id, "relay-changed", { name, viewId });
-            console.log("lobby", this.now(), `relay for '${name}' is ${viewId}`,
+            console.log("LobbyModel", this.now(), `relay for '${name}' is ${viewId}`, "views:",
                 [...this.views.values()].map(v => `${v.viewId} ${v.session ? v.session.name : "in lobby"}`));
         }
         this.sessionActive(session);
         this.publish(this.id, "session-changed", name);
-        // console.log("lobby", this.now(), "in app session", session.name, users, [...session.views].map(v => v.viewId));
+        // console.log("LobbyModel", this.now(), "in app session", session.name, users, [...session.views].map(v => v.viewId));
     }
 
 
@@ -391,20 +395,23 @@ class Lobby extends Multisynq.Model {
 
     sessionExpired(session) {
         for (const view of session.views) {
+            console.log("LobbyModel", this.now(), `view ${view.viewId} session '${session.name}' expired, returning to lobby`);
             view.session = null;
         }
         if (session.timeout) this.cancelFuture(session.timeout);
         this.sessions.delete(session.name);
         this.publish(this.id, "session-changed", session.name);
-        console.log("lobby", this.now(), "session expired", session.name);
+        console.log("LobbyModel", this.now(), `session '${session.name}' expired`, "views:",
+            [...this.views.values()].map(v => `${v.viewId} ${v.session ? v.session.name : "in lobby"}`));
     }
 }
-Lobby.register("Lobby");
+LobbyModel.register("LobbyModel");
 
 class LobbyView extends Multisynq.View {
     constructor(model) {
         super(model);
         this.model = model;
+        console.log("LobbyView", this.viewId, "created");
         this.subscribe(this.model.id, "relay-changed", this.relayChanged);
         this.subscribe(this.model.id, "session-changed", this.showSessions);
         this.interval = setInterval(() => this.showSessions(), 1000);
@@ -446,19 +453,23 @@ class LobbyView extends Multisynq.View {
         window.onmessage = e => {
             if (e.data && e.data.type === "multisynq-lobby") {
                 const { name, users } = e.data;
-                // console.log("lobby", "in app session", name, users);
-                this.publish(this.model.id, "in-app-session", { viewId: this.viewId, name, now: Date.now(), users });
-                if (name !== appSessionName) {
-                    console.error("lobby", "app session is different", name, this.viewId);
+                if (!appSessionName || name !== appSessionName) {
+                    console.log(`LobbyView ${this.viewId}: ignoring message for '${name}' (not me)`);
+                    return;
                 }
+                // console.log(`LobbyView ${this.viewId}: in app session`, name, users);
+                this.publish(this.model.id, "in-app-session", { viewId: this.viewId, name, now: Date.now(), users });
             }
         }
     }
 
     async relayChanged({ name, viewId }) {
-        console.log("lobby", `relay for '${name}' is ${viewId} ${viewId === this.viewId ? "(me)" : "(not me)"}`);
-        if (name === appSessionName && viewId !== this.viewId) {
-            console.log("lobby", "leaving lobby session", name, this.viewId);
+        // ignore messages if we're not in the app session
+        if (!appSessionName || name !== appSessionName) return;
+        console.log(`LobbyView ${this.viewId}: relay for '${name}' is ${viewId} ${viewId === this.viewId ? "(me)" : "(not me)"}`);
+        if (viewId !== this.viewId) {
+            console.log(`LobbyView ${this.viewId}: leaving lobby session`, name);
+            clearInterval(this.interval);
             await this.session.leave();
             lobbySession = null;
         }
@@ -541,7 +552,10 @@ class LobbyView extends Multisynq.View {
         clearInterval(this.interval);
         window.onmessage = enterLobbyOnMessage; // in case we become the relay
         window.onhashchange = toggleLobbyOnHashChange; // e.g. back button
+        const list = document.getElementById("sessions");
+        list.innerHTML = ""; // discard event listeners attached to this view
         super.detach();
+        console.log("LobbyView", this.viewId, "detached");
     }
 }
 
@@ -552,6 +566,7 @@ function enterApp(name) {
         name = prompt("Session Name");
         if (!name) return "";
     }
+    console.log(`entering app session '${name}'`);
     // open app in iframe
     appSessionName = name;
     let iframe = document.getElementById("app");
@@ -566,6 +581,7 @@ function enterApp(name) {
 }
 
 function exitApp() {
+    console.log(`exiting app session ${appSessionName}`);
     appSessionName = "";
     // close app in iframe
     let iframe = document.getElementById("app");
@@ -599,6 +615,7 @@ let lobbySession = null;
 
 async function enterLobby() {
     if (lobbySession) return; // already in (or joining) lobby session
+    console.log("joining lobby session");
     lobbySession = Multisynq.Session.join({
         apiKey: '234567_Paste_Your_Own_API_Key_Here_7654321', // get your own from multisynq.io/coder
         appId: "io.multisynq.lobby",
@@ -606,7 +623,7 @@ async function enterLobby() {
         password: "lobby",
         viewData: {}, // need to pass viewData so location gets passed into view-join
         location: true,
-        model: Lobby,
+        model: LobbyModel,
         view: LobbyView,
         autoSleep: false, // fixme – only need to force while game is running and we're the relay?
         tps: 1,
