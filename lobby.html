@@ -488,6 +488,7 @@ class LobbyView extends Multisynq.View {
                     return;
                 }
                 // console.log(`LobbyView ${this.viewId}: in app session`, name, details);
+                // tell the model that this app session is active
                 this.publish(this.model.id, "in-app-session", { viewId: this.viewId, name, now: Date.now(), details });
             }
         }
@@ -580,7 +581,6 @@ class LobbyView extends Multisynq.View {
     detach() {
         clearInterval(this.interval);
         window.onmessage = enterLobbyOnMessage; // in case we become the relay
-        window.onhashchange = toggleLobbyOnHashChange; // e.g. back button
         const list = document.getElementById("sessions");
         list.innerHTML = ""; // discard event listeners attached to this view
         super.detach();
@@ -610,7 +610,9 @@ function enterApp(name) {
     // hide lobby, show app
     document.body.classList.toggle("in-lobby", false);
     // update session URL and QR code and title
+    window.onhashchange = null;
     window.location.hash = "#" + encodeURIComponent(name);
+    setTimeout(() => window.onhashchange = toggleLobbyOnHashChange, 0);
     Multisynq.App.sessionURL = window.location.href;
     document.title = APPNAME ? `${APPNAME} - ${name}` : name;
     return name;
@@ -624,7 +626,9 @@ async function exitApp() {
     // hide app, show lobby
     document.body.classList.toggle("in-lobby", true);
     // update session URL and QR code and title
+    window.onhashchange = null;
     window.location.hash = "";
+    setTimeout(() => window.onhashchange = toggleLobbyOnHashChange, 0);
     Multisynq.App.sessionURL = window.location.href;
     document.title = APPNAME;
     // if we're in a lobby session, notify the lobby session that we're now back in the lobby
@@ -638,14 +642,15 @@ async function exitApp() {
     }
 }
 
+// in case we become the relay, we'll get a message from the app session in the iframe
 function enterLobbyOnMessage(e) {
     if (e.data && e.data.type === "multisynq-lobby") {
         enterLobby();
     }
 }
 
+// this is called when the hash changes, e.g. when the user clicks the back button
 function toggleLobbyOnHashChange() {
-    const wasInLobby = !appSessionName;
     appSessionName = window.location.hash.slice(1);
     if (appSessionName) {
         enterApp(decodeURIComponent(appSessionName));
