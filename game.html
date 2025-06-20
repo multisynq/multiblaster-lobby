@@ -325,7 +325,7 @@ class Blast extends SpaceObject {
 }
 Blast.register("Blast");
 
-// This model is used to elect a relay view for the lobby session
+// Class LobbyRelayModel is used to elect a relay view for the lobby session
 // Its view is a LobbyRelayView, which reports to the lobby session in the parent window
 // This is so only one device in a game session reports to the lobby session
 class LobbyRelayModel extends Multisynq.Model {
@@ -637,6 +637,14 @@ class Display extends Multisynq.View {
     }
 }
 
+// The LobbyRelayView is a view that reports details about the game session
+// to the lobby session in the parent window.
+// Its model (a LobbyRelayModel) elects one of the views to act as relay.
+// Only the elected relay view reports to the lobby session. It sends messages
+// to the lobby session in the parent window.
+// This way, the lobby session knows which sessions are active, but only one player
+// in each game session also has to be in the lobby session.
+
 class LobbyRelayView extends Multisynq.View {
     constructor(model) {
         super(model);
@@ -706,7 +714,7 @@ function joinSessionFromLobby() {
     let sessionName = url.searchParams.get("session");
     let inIframe = window.parent !== window;
 
-    url.pathname = url.pathname.replace(/[^/]*$/, "lobby.html");
+    url.pathname = url.pathname.replace(/[^/]*$/, "index.html");
 
     // redirect to lobby if not in iframe or session
     if (!inIframe || !sessionName) window.location.href = url.href;
