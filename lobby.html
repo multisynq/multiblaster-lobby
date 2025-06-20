@@ -561,16 +561,23 @@ class LobbyView extends Multisynq.View {
 
 //////////////////////////////
 
+function setAppSrc(src) {
+    // to avoid getting two history entries, we can't just set iframe.src
+    // but we have to replace the iframe itself
+    const iframe = document.getElementById("app");
+    const parent = iframe.parentNode;
+    const newIframe = iframe.cloneNode();
+    newIframe.src = src;
+    parent.replaceChild(newIframe, iframe);
+    iframe.src = ""; // just in case
+}
+
 function enterApp(name) {
-    if (name === "New Session") {
-        name = prompt("Session Name");
-        if (!name) return "";
-    }
     console.log(`entering app session '${name}'`);
     // open app in iframe
     appSessionName = name;
-    let iframe = document.getElementById("app");
-    iframe.src = Multisynq.Constants.AppUrl + `?session=${encodeURIComponent(name)}`;
+    const params = window.location.search.slice(1);
+    setAppSrc(Multisynq.Constants.AppUrl + `?session=${encodeURIComponent(name)}` + (params ? "&" + params : ""));
     // hide lobby, show app
     document.body.classList.toggle("in-lobby", false);
     // update session URL and QR code and title
@@ -584,8 +591,7 @@ function exitApp() {
     console.log(`exiting app session ${appSessionName}`);
     appSessionName = "";
     // close app in iframe
-    let iframe = document.getElementById("app");
-    iframe.src = "";
+    setAppSrc("");
     // hide app, show lobby
     document.body.classList.toggle("in-lobby", true);
     // update session URL and QR code and title
