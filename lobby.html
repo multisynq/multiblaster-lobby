@@ -288,6 +288,13 @@ try { appSessionName = decodeURIComponent(appSessionName); } catch (e) { }
 
 const SESSION_TIMEOUT = 5; // expire after 5 seconds (game pings lobby every 2 seconds)
 
+/*
+    This is the model for the lobby session.
+    It maintains a list of sessions, and a list of views.
+
+    Each view is either in an app session (acting as a relay), or in the lobby (view.session === null).
+    [in game.html, the app session elects one of its views to act as a relay, and sends messages to the lobby]
+*/
 class LobbyModel extends Multisynq.Model {
 
     init() {
@@ -302,10 +309,9 @@ class LobbyModel extends Multisynq.Model {
     ensureSession(name, since) {
         let session = this.sessions.get(name);
         if (!session) {
-            console.log("LobbyModel", this.now(), `creating session '${name}'`);
             session = {
                 name,
-                users: "",
+                details: null,
                 views: new Set(),
                 relay: null,
                 since,
@@ -313,7 +319,7 @@ class LobbyModel extends Multisynq.Model {
                 timeout: null,
             };
             this.sessions.set(name, session);
-            console.log("LobbyModel", this.now(), "sessions:", this.sessions);
+            console.log("LobbyModel", this.now(), `created session '${name}', sessions:`, this.sessions);
         }
         return session;
     }
@@ -344,25 +350,23 @@ class LobbyModel extends Multisynq.Model {
         let session = view.session;
         if (session) {
             session.views.delete(view);
-            const users = parseInt(session.users);
-            if (users === 1) {
-                // last user in session, expire it right away
-                this.sessionExpired(session);
-            } else {
+            if (session.details?.users > 1) {
                 if (session.relay === view) {
                     session.relay = null;
                     // renew the session timeout, hope another relay appears
                     this.sessionActive(session);
                 }
+            } else {
+                // last user in session, expire it right away
+                this.sessionExpired(session);
             }
-            // if there were more than one user, the session will expire on its own
         }
         console.log("LobbyModel", this.now(), "view exited", viewId, "views:",
             [...this.views.values()].map(v => `${v.viewId} ${v.session ? v.session.name : "in lobby"}`));
     }
 
     // this is published by the lobby view when it receives a message from the app's lobby relay
-    inAppSession({ viewId, name, now, users }) {
+    inAppSession({ viewId, name, now, details }) {
         let view = this.views.get(viewId);
         if (view.session && view.session.name !== name) {
             console.warn("LobbyModel", this.now(), "view changed session", viewId, view.session.name, name);
@@ -370,7 +374,7 @@ class LobbyModel extends Multisynq.Model {
         }
         let session = this.ensureSession(name, now); // now is current Date.now() sent by the view
         session.lastActive = this.now();
-        session.users = users;
+        session.details = details;
         if (!session.views.has(view)) {
             session.views.add(view);
             view.session = session;
@@ -423,6 +427,14 @@ class LobbyModel extends Multisynq.Model {
 }
 LobbyModel.register("LobbyModel");
 
+/*
+    This is the view for the lobby session.
+    It displays the list of sessions, and the list of views in the lobby.
+    When the user joins an app session, the app is loaded in an iframe, and this view is hidden.
+    It might still act as a relay for the app (in which case it stays in the lobby session).
+    If another of the app's users was elected as relay, this view will leave the lobby session.
+    This ensures that only one user per app session is also in the lobby session.
+*/
 class LobbyView extends Multisynq.View {
     constructor(model) {
         super(model);
@@ -434,8 +446,9 @@ class LobbyView extends Multisynq.View {
         this.showSessions();
 
         // Bind the "Host New Game" button
+        // note that we use onclick instead of addEventListener so we don't have to remove handlers in detach()
         const newGameButton = document.getElementById('host-new');
-        newGameButton.addEventListener("click", () => {
+        newGameButton.onclick = () => {
             const dialog = document.getElementById('host-dialog');
             const nameInput = document.getElementById('host-dialog-name');
             const okButton = document.getElementById('host-dialog-submit');
@@ -464,17 +477,18 @@ class LobbyView extends Multisynq.View {
 
             dialog.showModal();
             nameInput.focus();
-        });
+        };
 
+        // handle messages from the app session in the iframe
         window.onmessage = e => {
             if (e.data && e.data.type === "multisynq-lobby") {
-                const { name, users } = e.data;
+                const { name, details } = e.data;
                 if (!appSessionName || name !== appSessionName) {
                     console.log(`LobbyView ${this.viewId}: ignoring message for '${name}' (not me)`);
                     return;
                 }
-                // console.log(`LobbyView ${this.viewId}: in app session`, name, users);
-                this.publish(this.model.id, "in-app-session", { viewId: this.viewId, name, now: Date.now(), users });
+                // console.log(`LobbyView ${this.viewId}: in app session`, name, details);
+                this.publish(this.model.id, "in-app-session", { viewId: this.viewId, name, now: Date.now(), details });
             }
         }
     }
@@ -509,10 +523,9 @@ class LobbyView extends Multisynq.View {
                 list.appendChild(item);
             }
             // update the list item
-            const users = session.users; // string or { count, description, color }
-            const description = users.description || users;
+            const details = session.details; // { users, description } (or more, if the app sends them)
+            const description = details.description;
             item.innerHTML = `<b>${session.name}</b>: ${description || "starting ..."}`;
-            item.className = users.color;
         }
         // remove any remaining items
         for (const item of items) {

@@ -351,7 +351,7 @@ class LobbyRelayModel extends Multisynq.Model {
     viewsChanged() {
         if (!this.views.has(this.relayViewId)) {
             this.relayViewId = this.views.keys().next().value;
-            console.log("LobbyRelayModel", this.now(), "relay now", this.relayViewId);
+            console.log("LobbyRelayModel", this.now(), "relay is now", this.relayViewId);
             this.publish(this.id, "relay-changed", this.relayViewId);
         }
     }
@@ -656,6 +656,7 @@ class Display extends Multisynq.View {
 class LobbyRelayView extends Multisynq.View {
     constructor(model) {
         super(model);
+        console.log("LobbyRelayView", this.viewId, "created");
         this.model = model;
         window.addEventListener("message", this);
         this.subscribe(model.id, "relay-changed", this.relayChanged);
@@ -663,7 +664,7 @@ class LobbyRelayView extends Multisynq.View {
     }
 
     relayChanged(viewId) {
-        console.log(`LobbyRelayView ${this.viewId}: relay now ${viewId} ${this.viewId === viewId ? "(me)" : "(not me)"}`);
+        console.log(`LobbyRelayView ${this.viewId}: relay is now ${viewId} ${this.viewId === viewId ? "(me)" : "(not me)"}`);
         clearInterval(this.lobbyInterval);
         if (viewId === this.viewId) {
             this.reportToLobby();
@@ -679,7 +680,7 @@ class LobbyRelayView extends Multisynq.View {
     }
 
     reportToLobby() {
-        let users = `${this.model.views.size} player${this.model.views.size === 1 ? "" : "s"}`;
+        let description = `${this.model.views.size} player${this.model.views.size === 1 ? "" : "s"}`;
         const locations = new Map();
         let unknown = false;
         for (const [viewId, { location }] of this.model.views) {
@@ -698,12 +699,17 @@ class LobbyRelayView extends Multisynq.View {
                 sorted = sorted.slice(0, 3);
                 unknown = true;
             }
-            users += ` from ${sorted.map(([location]) => location).join(", ")}`;
-            if (unknown) users += " and elsewhere";
+            description += ` from ${sorted.map(([location]) => location).join(", ")}`;
+            if (unknown) description += " and elsewhere";
         }
 
-        window.parent.postMessage({type: "multisynq-lobby", name: this.session.name, users}, "*");
-        // console.log(`LobbyRelayView ${this.viewId}: sending multisynq-lobby`, this.session.name, users);
+        const details = {
+            users: this.model.views.size,
+            description,
+        };
+
+        window.parent.postMessage({type: "multisynq-lobby", name: this.session.name, details}, "*");
+        // console.log(`LobbyRelayView ${this.viewId}: sending multisynq-lobby`, this.session.name, details);
     }
 }
 
