@@ -296,6 +296,7 @@ class LobbyModel extends Multisynq.Model {
         this.subscribe(this.sessionId, "view-join", this.viewJoined);
         this.subscribe(this.sessionId, "view-exit", this.viewExited);
         this.subscribe(this.id, "in-app-session", this.inAppSession);
+        this.subscribe(this.id, "in-lobby", this.inLobby);
     }
 
     ensureSession(name, since) {
@@ -386,6 +387,21 @@ class LobbyModel extends Multisynq.Model {
         // console.log("LobbyModel", this.now(), "in app session", session.name, users, [...session.views].map(v => v.viewId));
     }
 
+    // this is published by the lobby view when it exited the app session
+    inLobby({ viewId }) {
+        console.log("LobbyModel", this.now(), `view ${viewId} exited to lobby`);
+        const view = this.views.get(viewId);
+        if (view?.session) {
+            const session = view.session;
+            session.views.delete(view);
+            view.session = null;
+            if (session.details?.users > 1) {
+                this.sessionActive(session);
+            } else {
+                this.sessionExpired(session);
+            }
+        }
+    }
 
     // expire session after SESSION_TIMEOUT seconds unless this is called again
     sessionActive(session) {
@@ -471,7 +487,7 @@ class LobbyView extends Multisynq.View {
             console.log(`LobbyView ${this.viewId}: leaving lobby session`, name);
             clearInterval(this.interval);
             await this.session.leave();
-            lobbySession = null;
+            lobbySessionPromise = null;
         }
     }
 
@@ -489,7 +505,7 @@ class LobbyView extends Multisynq.View {
             if (!item) {
                 item = document.createElement("li");
                 item.setAttribute("data-session", session.name);
-                item.addEventListener("click", () => this.sessionClicked(session.name));
+                item.addEventListener("click", () => this.sessionClicked(session.name)); // remove in detach()
                 list.appendChild(item);
             }
             // update the list item
@@ -587,7 +603,7 @@ function enterApp(name) {
     return name;
 }
 
-function exitApp() {
+async function exitApp() {
     console.log(`exiting app session ${appSessionName}`);
     appSessionName = "";
     // close app in iframe
@@ -598,6 +614,15 @@ function exitApp() {
     window.location.hash = "";
     Multisynq.App.sessionURL = window.location.href;
     document.title = APPNAME;
+    // if we're in a lobby session, notify the lobby session that we're now back in the lobby
+    if (lobbySessionPromise) {
+        const lobbySession = await lobbySessionPromise;
+        const { view } = lobbySession;
+        if (!view) return;
+        console.log(`LobbyView ${view.viewId}: tell model we're back in the lobby`);
+        view.publish(view.model.id, "in-lobby", { viewId: view.viewId });
+        view.showSessions();
+    }
 }
 
 function enterLobbyOnMessage(e) {
@@ -617,12 +642,12 @@ function toggleLobbyOnHashChange() {
     }
 }
 
-let lobbySession = null;
+let lobbySessionPromise = null;
 
 async function enterLobby() {
-    if (lobbySession) return; // already in (or joining) lobby session
+    if (lobbySessionPromise) return; // already in (or joining) lobby session
     console.log("joining lobby session");
-    lobbySession = Multisynq.Session.join({
+    lobbySessionPromise = Multisynq.Session.join({
         apiKey: '234567_Paste_Your_Own_API_Key_Here_7654321', // get your own from multisynq.io/coder
         appId: "io.multisynq.lobby",
         name: "lobby",
@@ -634,7 +659,7 @@ async function enterLobby() {
         autoSleep: false, // fixme – only need to force while game is running and we're the relay?
         tps: 1,
     });
-    await lobbySession;
+    await lobbySessionPromise;
 }
 
 Multisynq.App.makeWidgetDock(); // shows QR code
