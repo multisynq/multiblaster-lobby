@@ -73,12 +73,12 @@ class Game extends Multisynq.Model {
         this.mainLoop();
     }
 
-    viewJoined(viewId) {
+    viewJoined({viewId}) {
         const ship = Ship.create({ viewId });
         this.ships.set(viewId, ship);
     }
 
-    viewExited(viewId) {
+    viewExited({viewId}) {
         const ship = this.ships.get(viewId);
         this.ships.delete(viewId);
         ship.destroy();
@@ -328,31 +328,31 @@ Blast.register("Blast");
 class Elected extends Multisynq.Model {
     init() {
         super.init();
-        this.viewIds = new Set();
+        this.views = new Map();
         this.electedViewId = "";
         this.subscribe(this.sessionId, "view-join", this.viewJoined);
         this.subscribe(this.sessionId, "view-exit", this.viewExited);
     }
 
-    viewJoined(viewId) {
-        this.viewIds.add(viewId);
+    viewJoined({viewId, location}) {
+        this.views.set(viewId, { location });
         this.viewsChanged();
     }
 
-    viewExited(viewId) {
-        this.viewIds.delete(viewId);
+    viewExited({viewId}) {
+        this.views.delete(viewId);
         this.viewsChanged();
     }
 
     viewsChanged() {
-        if (!this.viewIds.has(this.electedViewId)) {
-            this.electedViewId = this.viewIds.values().next().value;
+        if (!this.views.has(this.electedViewId)) {
+            this.electedViewId = this.views.keys().next().value;
             this.viewElected(this.electedViewId);
-            console.log(this.now(), "elected", this.electedViewId);
         }
     }
 
     viewElected(viewId) {
+        console.log(this.now(), "elected", this.electedViewId);
         this.publish(this.sessionId, "elected-view", viewId);
     }
 }
@@ -369,13 +369,13 @@ class LobbyRelay extends Elected {
 
     viewsChanged() {
         super.viewsChanged();
-        if (this.viewIds.size === 0) {
+        if (this.views.size === 0) {
             this.toRelay = null;
         } else {
-            this.toRelay = { changeId: ++this.changeId, views: [...this.viewIds] };
+            this.toRelay = { changeId: ++this.changeId, views: [...this.views.keys()] };
             this.publish(this.id, "relay-views");
         }
-        console.log(this.now(), "to relay", this.toRelay);
+        // console.log(this.now(), "to relay", this.toRelay);
     }
 
     viewElected(viewId) {
@@ -386,7 +386,7 @@ class LobbyRelay extends Elected {
         console.log(this.now(), "relay done", changeId);
         if (this.toRelay && this.toRelay.changeId === changeId) {
             this.toRelay = null;
-            console.log(this.now(), "to relay", this.toRelay);
+            // console.log(this.now(), "to relay", this.toRelay);
         }
     }
 }
@@ -692,16 +692,15 @@ class LobbyRelayView extends Multisynq.View {
         this.model = model;
         window.addEventListener("message", this);
         this.subscribe(model.id, "relay-changed", this.relayChanged);
-        console.log("relay", this.viewId, "created");
         this.relayChanged(this.model.electedViewId);
     }
 
     relayChanged(viewId) {
-        console.log("relay", this.viewId, "relay changed to", viewId, this.viewId === viewId ? "(me)" : "(not me)");
+        console.log(`game relay ${this.viewId}: relay now ${viewId} ${this.viewId === viewId ? "(me)" : "(not me)"}`);
         clearInterval(this.lobbyInterval);
         if (viewId === this.viewId) {
             this.reportToLobby();
-            this.lobbyInterval = setInterval(() => this.reportToLobby(), 1000);
+            this.lobbyInterval = setInterval(() => this.reportToLobby(), 2000);
         }
     }
 
@@ -709,20 +708,19 @@ class LobbyRelayView extends Multisynq.View {
         clearInterval(this.lobbyInterval);
         window.removeEventListener("message", this);
         super.detach();
-        console.log("relay", this.viewId, "detached");
+        console.log(`game relay ${this.viewId}: detached`);
     }
 
     reportToLobby() {
-        let users = `${this.model.viewIds.size} player${this.model.viewIds.size === 1 ? "" : "s"}`;
+        let users = `${this.model.views.size} player${this.model.views.size === 1 ? "" : "s"}`;
         const locations = new Map();
         let unknown = false;
-        for (const viewId of this.model.viewIds) {
-            const loc = CROQUETVM.views[viewId]?.loc;
-            if (loc?.country) {
-                let location = loc.country;
-                if (loc.region) location = loc.region + ", " + location;
-                if (loc.city) location = loc.city.name + " (" + location + ")";
-                locations.set(location, (locations.get(location) || 0) + 1);
+        for (const [viewId, { location }] of this.model.views) {
+            if (location?.country) {
+                let label = location.country;
+                if (location.region) label = location.region + ", " + label;
+                if (location.city) label = location.city.name + " (" + label + ")";
+                locations.set(label, (locations.get(label) || 0) + 1);
             } else {
                 unknown = true;
             }
@@ -738,12 +736,12 @@ class LobbyRelayView extends Multisynq.View {
         }
 
         window.parent.postMessage({type: "multisynq-lobby", name: this.session.name, users}, "*");
-        // console.log("relay", this.viewId, "sending multisynq-lobby", this.session.name, users);
+        // console.log("game relay", this.viewId, "sending multisynq-lobby", this.session.name, users);
     }
 
     handleEvent(event) {
         if (event.type !== "message") return;
-        console.log("relay", this.viewId, "got", event.data);
+        console.log("game relay", this.viewId, "got", event.data);
     }
 }
 
@@ -766,6 +764,7 @@ Multisynq.Session.join({
     appId: 'io.multisynq.multiblaster',
     name: sessionName,
     password: "none",
+    viewData: {}, // need to pass viewData so location gets passed into view-join
     location: true,
     model: Game,
     view: Display,

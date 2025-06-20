@@ -293,7 +293,7 @@ class Lobby extends Multisynq.Model {
         this.views = new Map();
         this.subscribe(this.sessionId, "view-join", this.viewJoined);
         this.subscribe(this.sessionId, "view-exit", this.viewExited);
-        this.subscribe(this.sessionId, "in-app-session", this.inAppSession);
+        this.subscribe(this.id, "in-app-session", this.inAppSession);
     }
 
     ensureSession(name, since) {
@@ -313,15 +313,27 @@ class Lobby extends Multisynq.Model {
         return session;
     }
 
-    viewJoined(viewId) {
-        this.views.set(viewId, {
-            viewId,
-            session: null,
-        });
-        console.log("lobby", this.now(), "view joined", viewId, [...this.views.keys()]);
+    printLocation(location) {
+        if (location?.country) {
+            let printed = location.country;
+            if (location.region) printed = `${location.region}, ${printed}`;
+            if (location.city) printed = `${location.city.name} (${printed})`;
+            return printed;
+        }
+        return "";
     }
 
-    viewExited(viewId) {
+    viewJoined({ viewId, location }) {
+        this.views.set(viewId, {
+            viewId,
+            location: this.printLocation(location),
+            session: null,
+        });
+        console.log("lobby", this.now(), "view joined", viewId,
+            [...this.views.values()].map(v => `${v.viewId} ${v.session ? v.session.name : "in lobby"}`));
+    }
+
+    viewExited({viewId}) {
         let view = this.views.get(viewId);
         this.views.delete(viewId);
         let session = view.session;
@@ -344,6 +356,7 @@ class Lobby extends Multisynq.Model {
             [...this.views.values()].map(v => `${v.viewId} ${v.session ? v.session.name : "in lobby"}`));
     }
 
+    // this is published by the lobby view when it receives a message from the app's lobby relay
     inAppSession({ viewId, name, now, users }) {
         let view = this.views.get(viewId);
         if (view.session && view.session.name !== name) {
@@ -357,17 +370,20 @@ class Lobby extends Multisynq.Model {
             session.views.add(view);
             view.session = session;
         }
+        // new view is taking over as relay
         if (session.relay !== view) {
             session.relay = view;
-            this.publish(this.sessionId, "relay-changed", { name, viewId });
-            console.log("lobby", this.now(), "relay changed", name, viewId);
+            this.publish(this.id, "relay-changed", { name, viewId });
+            console.log("lobby", this.now(), `relay for '${name}' is ${viewId}`,
+                [...this.views.values()].map(v => `${v.viewId} ${v.session ? v.session.name : "in lobby"}`));
         }
         this.sessionActive(session);
-        this.publish(this.sessionId, "session-changed", name);
+        this.publish(this.id, "session-changed", name);
         // console.log("lobby", this.now(), "in app session", session.name, users, [...session.views].map(v => v.viewId));
     }
 
 
+    // expire session after SESSION_TIMEOUT seconds unless this is called again
     sessionActive(session) {
         if (session.timeout) this.cancelFuture(session.timeout);
         session.timeout = this.future(SESSION_TIMEOUT * 1000).sessionExpired(session);
@@ -379,7 +395,7 @@ class Lobby extends Multisynq.Model {
         }
         if (session.timeout) this.cancelFuture(session.timeout);
         this.sessions.delete(session.name);
-        this.publish(this.sessionId, "session-changed", session.name);
+        this.publish(this.id, "session-changed", session.name);
         console.log("lobby", this.now(), "session expired", session.name);
     }
 }
@@ -389,8 +405,8 @@ class LobbyView extends Multisynq.View {
     constructor(model) {
         super(model);
         this.model = model;
-        this.subscribe(this.sessionId, "relay-changed", this.relayChanged);
-        this.subscribe(this.sessionId, "session-changed", this.showSessions);
+        this.subscribe(this.model.id, "relay-changed", this.relayChanged);
+        this.subscribe(this.model.id, "session-changed", this.showSessions);
         this.interval = setInterval(() => this.showSessions(), 1000);
         this.showSessions();
 
@@ -431,7 +447,7 @@ class LobbyView extends Multisynq.View {
             if (e.data && e.data.type === "multisynq-lobby") {
                 const { name, users } = e.data;
                 // console.log("lobby", "in app session", name, users);
-                this.publish(this.sessionId, "in-app-session", { viewId: this.viewId, name, now: Date.now(), users });
+                this.publish(this.model.id, "in-app-session", { viewId: this.viewId, name, now: Date.now(), users });
                 if (name !== appSessionName) {
                     console.error("lobby", "app session is different", name, this.viewId);
                 }
@@ -440,7 +456,7 @@ class LobbyView extends Multisynq.View {
     }
 
     async relayChanged({ name, viewId }) {
-        console.log("lobby", "relay changed", name, viewId);
+        console.log("lobby", `relay for '${name}' is ${viewId} ${viewId === this.viewId ? "(me)" : "(not me)"}`);
         if (name === appSessionName && viewId !== this.viewId) {
             console.log("lobby", "leaving lobby session", name, this.viewId);
             await this.session.leave();
@@ -449,7 +465,7 @@ class LobbyView extends Multisynq.View {
     }
 
     showSessions() {
-        if (appSessionName) return;
+        if (appSessionName) return; // don't update session list while we're in an app session
         // list ongoing sessions
         const sessions = Array.from(this.model.sessions.values());
         sessions.sort((a, b) => b.since - a.since);
@@ -485,11 +501,8 @@ class LobbyView extends Multisynq.View {
             if (viewId === this.viewId) continue; // don't count self
             if (view.session) continue; // don't count in-app users
             count++;
-            const loc = CROQUETVM.views[viewId]?.loc;
-            if (loc?.country) {
-                let location = loc.country;
-                if (loc.region) location = loc.region + ", " + location;
-                if (loc.city) location = loc.city.name + " (" + location + ")";
+            const location = view.location;
+            if (location) {
                 locations.set(location, (locations.get(location) || 0) + 1);
             } else {
                 unknown = true;
@@ -585,15 +598,13 @@ function toggleLobbyOnHashChange() {
 let lobbySession = null;
 
 async function enterLobby() {
-    if (lobbySession) {
-        console.warn("lobby", "already in lobby session");
-        return;
-    }
+    if (lobbySession) return; // already in (or joining) lobby session
     lobbySession = Multisynq.Session.join({
         apiKey: '234567_Paste_Your_Own_API_Key_Here_7654321', // get your own from multisynq.io/coder
         appId: "io.multisynq.lobby",
         name: "lobby",
         password: "lobby",
+        viewData: {}, // need to pass viewData so location gets passed into view-join
         location: true,
         model: Lobby,
         view: LobbyView,
