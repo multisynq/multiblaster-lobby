@@ -2,7 +2,7 @@
 
 This is an example of a lobby for Multisynq games, implemented with Multisynq. It uses the game from step 9 of the [Multiblaster Tutorial](https://multisynq.io/docs/client/tutorial-1_6_multiblaster.html).
 
-## TL;DR
+## How to use
 
 To use this lobby in your own game:
 
